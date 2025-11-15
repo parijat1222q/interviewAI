@@ -87,11 +87,11 @@ InterviewAI is a web-based platform designed to help users practice job intervie
 6. Open your browser and go to `http://localhost:3000`
 ---
 ## Contributing
-Contributions are welcome! Please fork the repository and create a pull request with your changes. For major changes, please open an issue first to discuss what you would like to change.
+-Contributions are welcome! Please fork the repository and create a pull request with your changes. For major changes, please open an issue first to discuss what you would like to change.
 ---
 ## License
-This project is licensed under the MIT License. See the LICENSE file for details.
+-This project is licensed under the MIT License. See the LICENSE file for details.
 ---
 ## Contact
-For questions or support, please contact [parijatb32@gmail.com](mailto:parijatb32@gmail.com).
+-For questions or support, please contact [parijatb32@gmail.com](mailto:parijatb32@gmail.com).
 ---
