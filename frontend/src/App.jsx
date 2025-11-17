@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { isAuthenticated } from './api/auth';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import Interview from './pages/Interview';
 import Dashboard from './pages/Dashboard';
 import { Box } from '@mui/material';
@@ -37,6 +38,7 @@ function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         
         {/* Protected Routes */}
         <Route 

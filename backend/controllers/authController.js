@@ -33,7 +33,7 @@ exports.register = async (req, res, next) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );

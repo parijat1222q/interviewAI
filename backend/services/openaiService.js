@@ -43,7 +43,7 @@ Return ONLY a valid JSON object:
     `.trim();
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-4o-mini",
       messages: [{ role: "system", content: prompt }],
       temperature: 0.7,
       max_tokens: 400,
@@ -85,7 +85,7 @@ Return JSON: { "score": 75, "missing_keywords": ["React", "TypeScript"], "sugges
     `.trim();
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-4o-mini",
       messages: [{ role: "system", content: prompt }],
       temperature: 0.5,
       max_tokens: 300,
