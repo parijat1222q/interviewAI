@@ -1,17 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Box, Typography, Button, Alert, Paper, LinearProgress } from '@mui/material';
+import { 
+  Box, 
+  Typography, 
+  Button, 
+  Alert, 
+  Paper, 
+  LinearProgress,
+  ToggleButton,
+  ToggleButtonGroup
+} from '@mui/material';
 import { useInterview } from '../hooks/useInterview';
+import { useVoiceInterview } from '../hooks/useVoiceInterview';
 import QuestionBubble from '../components/Interview/QuestionBubble';
 import AnswerInput from '../components/Interview/AnswerInput';
 import FeedbackCard from '../components/Interview/FeedbackCard';
+import VoiceRecorder from '../components/Interview/VoiceRecorder';
 import { useNavigate } from 'react-router-dom';
 
 const Interview = () => {
   const {
     currentQuestion,
     feedback,
-    loading,
-    error,
+    loading: interviewLoading,
+    error: interviewError,
     sessionEnded,
     fetchQuestion,
     submit,
@@ -19,6 +30,9 @@ const Interview = () => {
     reset
   } = useInterview();
   
+  const { resetVoice } = useVoiceInterview();
+  const [mode, setMode] = useState('text'); // 'text' or 'voice'
+  const [voiceAnswer, setVoiceAnswer] = useState('');
   const [sessionStarted, setSessionStarted] = useState(false);
   const navigate = useNavigate();
 
@@ -30,8 +44,29 @@ const Interview = () => {
     }
   }, [sessionStarted, fetchQuestion]);
 
+  const handleModeChange = (event, newMode) => {
+    if (newMode !== null) {
+      setMode(newMode);
+      if (newMode === 'voice') {
+        resetVoice(); // Reset voice state when switching to voice mode
+      }
+    }
+  };
+
+  const handleVoiceTranscription = (transcript) => {
+    setVoiceAnswer(transcript);
+  };
+
   const handleAnswerSubmit = async (answer) => {
+    if (!answer.trim()) return;
     await submit(answer);
+    setVoiceAnswer(''); // Clear voice answer after submission
+  };
+
+  const handleSubmitVoiceAnswer = async () => {
+    if (voiceAnswer.trim()) {
+      await handleAnswerSubmit(voiceAnswer);
+    }
   };
 
   const handleEndSession = async () => {
@@ -39,6 +74,7 @@ const Interview = () => {
     if (summary) {
       alert(`Session completed!\n\nOverall Score: ${summary.overallScore.accuracy.toFixed(1)}/10\nTotal Questions: ${summary.totalQuestions}`);
       reset();
+      resetVoice();
       navigate('/dashboard');
     }
   };
@@ -64,6 +100,27 @@ const Interview = () => {
         AI Interview Simulation
       </Typography>
 
+      {/* Mode Toggle */}
+      <Paper className="p-4 mb-6">
+        <Typography variant="subtitle2" className="mb-2 font-semibold">
+          Answer Mode:
+        </Typography>
+        <ToggleButtonGroup
+          value={mode}
+          exclusive
+          onChange={handleModeChange}
+          aria-label="answer mode"
+          fullWidth
+        >
+          <ToggleButton value="text" aria-label="text mode">
+            ✍️ Text
+          </ToggleButton>
+          <ToggleButton value="voice" aria-label="voice mode">
+            🎤 Voice
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Paper>
+
       {/* Progress Indicator */}
       <Box className="mb-6">
         <Typography variant="body2" className="mb-2">
@@ -72,9 +129,9 @@ const Interview = () => {
         <LinearProgress />
       </Box>
 
-      {error && (
+      {interviewError && (
         <Alert severity="error" className="mb-4">
-          {error}
+          {interviewError}
         </Alert>
       )}
 
@@ -88,13 +145,36 @@ const Interview = () => {
         <FeedbackCard evaluation={feedback} />
       )}
 
-      {/* Answer Input */}
+      {/* Answer Input based on mode */}
       <Box className="mt-6">
-        <AnswerInput
-          onSubmit={handleAnswerSubmit}
-          disabled={loading}
-          loading={loading}
-        />
+        {mode === 'text' ? (
+          <AnswerInput
+            onSubmit={handleAnswerSubmit}
+            disabled={interviewLoading}
+            loading={interviewLoading}
+          />
+        ) : (
+          <Box>
+            <VoiceRecorder onTranscriptionComplete={handleVoiceTranscription} />
+            {voiceAnswer && (
+              <Paper className="p-4 mt-4 bg-blue-50">
+                <Typography variant="subtitle2" className="mb-2 font-semibold">
+                  Voice Answer Ready:
+                </Typography>
+                <Typography variant="body2" className="text-gray-700 mb-3">
+                  {voiceAnswer}
+                </Typography>
+                <Button
+                  variant="contained"
+                  onClick={handleSubmitVoiceAnswer}
+                  disabled={interviewLoading}
+                >
+                  Submit Voice Answer
+                </Button>
+              </Paper>
+            )}
+          </Box>
+        )}
       </Box>
 
       {/* Session Controls */}
@@ -102,7 +182,10 @@ const Interview = () => {
         <Button
           variant="outlined"
           color="secondary"
-          onClick={reset}
+          onClick={() => {
+            reset();
+            resetVoice();
+          }}
         >
           Restart Session
         </Button>
@@ -111,7 +194,7 @@ const Interview = () => {
           variant="contained"
           color="success"
           onClick={handleEndSession}
-          disabled={loading}
+          disabled={interviewLoading}
         >
           End Session & View Results
         </Button>
