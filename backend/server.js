@@ -63,6 +63,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Prevent direct access to uploads directory
+app.use('/uploads', (req, res) => {
+  res.status(403).json({ error: 'Access denied' });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
