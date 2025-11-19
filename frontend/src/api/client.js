@@ -32,10 +32,10 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
-    
+
     const message = error.response?.data?.error || error.message || 'An error occurred';
     console.error('API Error:', message);
-    
+
     return Promise.reject(error);
   }
 );
