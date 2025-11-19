@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
-import { analyzeResume } from '../api/interview';
 
 /**
- * Hook for managing voice interview functionality
+ * Hook for managing voice interview functionality with authenticated WebSocket
  * @returns {Object} - Voice recording state and controls
  */
 export const useVoiceInterview = () => {
@@ -76,7 +75,7 @@ export const useVoiceInterview = () => {
   }, [isRecording]);
 
   /**
-   * Transcribe recorded audio using OpenAI Whisper
+   * Transcribe recorded audio using authenticated OpenAI Whisper endpoint
    */
   const transcribeAudio = useCallback(async () => {
     if (!audioBlob) {
@@ -92,7 +91,7 @@ export const useVoiceInterview = () => {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
 
-      // Send to backend for transcription
+      // Send to backend for transcription (already authenticated via HTTP)
       const response = await fetch(`${import.meta.env.VITE_API_URL}/voice/transcribe`, {
         method: 'POST',
         headers: {
@@ -119,6 +118,65 @@ export const useVoiceInterview = () => {
   }, [audioBlob]);
 
   /**
+   * Get authenticated WebSocket token and establish connection
+   */
+  const getWebSocketToken = useCallback(async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/voice/token`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get WebSocket token: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.token;
+    } catch (err) {
+      setError('Failed to get WebSocket credentials: ' + err.message);
+      console.error('WebSocket token error:', err);
+      return null;
+    }
+  }, []);
+
+  /**
+   * Establish authenticated WebSocket connection
+   */
+  const connectWebSocket = useCallback(async () => {
+    try {
+      const token = await getWebSocketToken();
+      if (!token) {
+        setError('Authentication failed for voice connection');
+        return null;
+      }
+
+      const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:5000'}/voice-signal?token=${token}`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('✅ Authenticated WebSocket connected');
+      };
+
+      ws.onerror = (event) => {
+        console.error('WebSocket error:', event);
+        setError('WebSocket connection failed');
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+      };
+
+      return ws;
+    } catch (err) {
+      setError('Failed to establish WebSocket connection: ' + err.message);
+      return null;
+    }
+  }, [getWebSocketToken]);
+
+  /**
    * Reset voice state
    */
   const resetVoice = useCallback(() => {
@@ -141,6 +199,8 @@ export const useVoiceInterview = () => {
     startRecording,
     stopRecording,
     transcribeAudio,
+    connectWebSocket,
+    getWebSocketToken,
     resetVoice
   };
 };
