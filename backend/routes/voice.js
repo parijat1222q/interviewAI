@@ -18,7 +18,10 @@ const upload = multer({
 router.post('/start', auth, (req, res) => {
   try {
     const { role } = req.user;
-    const sessionId = `voice_${req.user.userId}_${Date.now()}`;
+    const userId = req.user.userId;
+    const sessionId = `voice_${userId}_${Date.now()}`;
+    
+    console.log(`🎙️ Voice session starting for user: ${userId}`);
     
     res.json({
       sessionId,
@@ -43,13 +46,19 @@ router.post('/transcribe', auth, upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    const transcription = await transcribeAudio(req.file.buffer);
+    const userId = req.user.userId;
+    console.log(`📤 Transcription request from user: ${userId}, file size: ${req.file.size} bytes`);
+
+    // Pass userId to transcription service for logging
+    const transcription = await VoiceService.transcribeAudio(req.file.buffer, userId);
     
     res.json({
       transcription,
-      duration: req.file.buffer.length / 1000 // Approximate duration in seconds
+      duration: req.file.buffer.length / 1000, // Approximate duration in seconds
+      userId // Echo back for client verification
     });
   } catch (error) {
+    console.error(`Transcription error for user ${req.user.userId}:`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -61,11 +70,52 @@ router.post('/transcribe', auth, upload.single('audio'), async (req, res) => {
 router.post('/end', auth, (req, res) => {
   try {
     const { sessionId } = req.body;
-    // Cleanup logic here
+    const userId = req.user.userId;
     
-    res.json({ message: 'Voice session ended' });
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID required' });
+    }
+    
+    console.log(`🛑 Voice session ending: ${sessionId} for user: ${userId}`);
+    
+    // Cleanup logic here
+    res.json({ 
+      message: 'Voice session ended',
+      sessionId,
+      userId
+    });
   } catch (error) {
+    console.error(`Session end error for user ${req.user.userId}:`, error.message);
     res.status(500).json({ error: 'Failed to end voice session' });
+  }
+});
+
+/**
+ * Get WebSocket connection token (generates disposable token for WebSocket auth)
+ * GET /api/voice/token
+ */
+router.get('/token', auth, (req, res) => {
+  try {
+    const jwt = require('jsonwebtoken');
+    const userId = req.user.userId;
+    
+    // Generate a short-lived token specifically for WebSocket connection (5 minutes)
+    const wsToken = jwt.sign(
+      { userId: req.user.userId, email: req.user.email, role: req.user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+    
+    console.log(`🔑 WebSocket token generated for user: ${userId}`);
+    
+    res.json({
+      token: wsToken,
+      expiresIn: 300, // 5 minutes in seconds
+      wsUrl: `${process.env.VOICE_WS_URL || 'ws://localhost:5000'}/voice-signal`
+    });
+  } catch (error) {
+    console.error(`Token generation error for user ${req.user.userId}:`, error.message);
+    res.status(500).json({ error: 'Failed to generate WebSocket token' });
   }
 });
 

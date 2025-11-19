@@ -1,5 +1,6 @@
 const { WebSocketServer } = require('ws');
 const { OpenAI } = require('openai');
+const jwt = require('jsonwebtoken');
 const fs = require('fs').promises;
 const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
@@ -13,58 +14,117 @@ class VoiceService {
   }
 
   /**
-   * Initialize WebSocket server for WebRTC signaling
+   * Initialize WebSocket server for WebRTC signaling with JWT authentication
    */
   initializeWebSocket(server) {
     this.wss = new WebSocketServer({ server, path: '/voice-signal' });
     
-    this.wss.on('connection', (ws) => {
-      console.log('🔊 Voice client connected');
+    this.wss.on('connection', (ws, req) => {
+      console.log('🔊 Voice client attempting connection...');
       
-      ws.on('message', (data) => {
-        try {
-          const message = JSON.parse(data);
-          this.handleSignalingMessage(ws, message);
-        } catch (err) {
-          ws.send(JSON.stringify({ error: 'Invalid message format' }));
-        }
-      });
+      // Extract token from query parameter: ws://.../voice-signal?token=YOUR_JWT_HERE
+      const url = new URL(req.url, 'http://localhost');
+      const token = url.searchParams.get('token');
+      
+      if (!token) {
+        console.warn('🔒 WebSocket connection rejected: No token provided');
+        ws.close(1008, 'Authentication required: Missing token');
+        return;
+      }
 
-      ws.on('close', () => {
-        console.log('🔊 Voice client disconnected');
-        this.cleanupSession(ws);
-      });
+      try {
+        // Verify JWT using same secret as HTTP middleware
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Attach user data to WebSocket instance for use in message handlers
+        ws.userId = decoded.userId;
+        ws.role = decoded.role;
+        ws.email = decoded.email;
+        
+        console.log(`✅ Voice client authenticated: ${decoded.email} (${decoded.userId})`);
+        
+        // Proceed with authenticated connection
+        ws.on('message', (data) => {
+          try {
+            const message = JSON.parse(data);
+            this.handleSignalingMessage(ws, message);
+          } catch (err) {
+            console.error('WebSocket message error:', err.message);
+            ws.send(JSON.stringify({ error: 'Invalid message format' }));
+          }
+        });
+
+        ws.on('close', () => {
+          console.log(`🔊 Voice client disconnected: ${ws.userId}`);
+          this.cleanupSession(ws);
+        });
+
+        ws.on('error', (error) => {
+          console.error(`WebSocket error for user ${ws.userId}:`, error.message);
+        });
+        
+      } catch (error) {
+        console.error('🔒 WebSocket auth failed:', error.message);
+        ws.close(1008, 'Authentication failed: Invalid or expired token');
+      }
     });
   }
 
   /**
-   * Handle WebRTC signaling messages
+   * Handle WebRTC signaling messages with user authorization
    */
   handleSignalingMessage(ws, message) {
     const { type, sessionId, offer, answer, candidate } = message;
 
     switch (type) {
       case 'join':
+        // Store session with userId for security
         this.sessions.set(sessionId, { 
-          id: sessionId, 
+          id: sessionId,
+          userId: ws.userId,
+          role: ws.role,
           client: ws, 
           peer: null,
-          audioBuffer: [] 
+          audioBuffer: [],
+          createdAt: new Date()
         });
-        ws.send(JSON.stringify({ type: 'joined', sessionId }));
+        console.log(`📍 Session created: ${sessionId} for user ${ws.userId}`);
+        ws.send(JSON.stringify({ 
+          type: 'joined', 
+          sessionId,
+          userId: ws.userId,
+          role: ws.role
+        }));
         break;
 
       case 'offer':
-        // Forward offer to AI peer (simulated)
+        // Verify session belongs to this user
         const session = this.sessions.get(sessionId);
-        if (session) {
-          // In real implementation, this would connect to AI voice peer
-          ws.send(JSON.stringify({ type: 'answer', answer: this.createMockAnswer() }));
+        if (!session) {
+          ws.send(JSON.stringify({ error: 'Session not found' }));
+          break;
         }
+        
+        if (session.userId !== ws.userId) {
+          console.warn(`🔒 Unauthorized session access attempt: ${ws.userId} tried to access ${session.userId}'s session`);
+          ws.send(JSON.stringify({ error: 'Unauthorized: Session belongs to another user' }));
+          break;
+        }
+        
+        // Forward offer to AI peer (simulated)
+        console.log(`📤 Offer received for session: ${sessionId}`);
+        ws.send(JSON.stringify({ 
+          type: 'answer', 
+          answer: this.createMockAnswer() 
+        }));
         break;
 
       case 'candidate':
-        // Handle ICE candidates
+        // Handle ICE candidates - verify ownership
+        const candidateSession = this.sessions.get(sessionId);
+        if (candidateSession && candidateSession.userId === ws.userId) {
+          console.log(`🔄 ICE candidate received for session: ${sessionId}`);
+        }
         break;
 
       default:
@@ -85,12 +145,15 @@ class VoiceService {
   /**
    * Transcribe audio blob to text using OpenAI Whisper
    * @param {Buffer} audioBuffer - Audio data buffer
+   * @param {string} userId - User ID for logging
    * @returns {Promise<string>} Transcribed text
    */
-  async transcribeAudio(audioBuffer) {
+  async transcribeAudio(audioBuffer, userId) {
     try {
+      console.log(`🎤 Starting transcription for user: ${userId}`);
+      
       // Save buffer to temp file
-      const tempFile = path.join(__dirname, `../../uploads/audio_${Date.now()}.webm`);
+      const tempFile = path.join(__dirname, `../../uploads/audio_${Date.now()}_${userId}.webm`);
       await fs.writeFile(tempFile, audioBuffer);
 
       // Convert to MP3 (Whisper works better with MP3)
@@ -108,6 +171,7 @@ class VoiceService {
       await fs.unlink(tempFile);
       await fs.unlink(mp3File);
 
+      console.log(`✅ Transcription complete for user: ${userId}`);
       return transcription;
     } catch (error) {
       console.error('Whisper transcription error:', error.message);
@@ -129,11 +193,12 @@ class VoiceService {
   }
 
   /**
-   * Cleanup disconnected session
+   * Cleanup disconnected session with user verification
    */
   cleanupSession(ws) {
     for (const [id, session] of this.sessions.entries()) {
       if (session.client === ws) {
+        console.log(`🗑️ Cleaning up session ${id} for user ${session.userId}`);
         this.sessions.delete(id);
         break;
       }
