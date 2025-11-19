@@ -7,14 +7,13 @@ const { generateInterviewRound, evaluateAnswer } = require('../services/openaiSe
  */
 exports.getQuestion = async (req, res, next) => {
   try {
-    const { previousAnswer } = req.body;
     const userId = req.user.userId;
     const userRole = req.user.role;
 
     // Find or create active session
-    let session = await InterviewSession.findOne({ 
-      userId, 
-      completed: false 
+    let session = await InterviewSession.findOne({
+      userId,
+      completed: false
     });
 
     if (!session) {
@@ -26,27 +25,15 @@ exports.getQuestion = async (req, res, next) => {
       });
     }
 
-    // If previous answer exists, evaluate and save it
-    if (previousAnswer && session.currentQuestion) {
-      const evaluation = await evaluateAnswer(userRole, session.currentQuestion, previousAnswer);
-      session.questions.push({
-        question: session.currentQuestion,
-        answer: previousAnswer,
-        evaluation: evaluation,
-        answeredAt: new Date()
-      });
+    // If no current question, generate one
+    if (!session.currentQuestion) {
+      const aiResult = await generateInterviewRound(userRole, null);
+      session.currentQuestion = aiResult.question;
+      await session.save();
     }
 
-    // Generate next question with AI
-    const aiResult = await generateInterviewRound(userRole, previousAnswer || null);
-
-    // Update session with new question
-    session.currentQuestion = aiResult.question;
-    await session.save();
-
     res.json({
-      question: aiResult.question,
-      evaluation: aiResult.evaluation // For immediate feedback on first question
+      question: session.currentQuestion
     });
   } catch (error) {
     next(error);
@@ -67,9 +54,9 @@ exports.submitAnswer = async (req, res, next) => {
     }
 
     // Find active session
-    const session = await InterviewSession.findOne({ 
-      userId, 
-      completed: false 
+    const session = await InterviewSession.findOne({
+      userId,
+      completed: false
     });
 
     if (!session || !session.currentQuestion) {
@@ -107,12 +94,12 @@ exports.submitAnswer = async (req, res, next) => {
  */
 exports.getHistory = async (req, res, next) => {
   try {
-    const sessions = await InterviewSession.find({ 
+    const sessions = await InterviewSession.find({
       userId: req.user.userId,
       completed: true
     })
-    .sort({ createdAt: -1 })
-    .limit(20);
+      .sort({ createdAt: -1 })
+      .limit(20);
 
     res.json({ sessions });
   } catch (error) {
@@ -126,9 +113,9 @@ exports.getHistory = async (req, res, next) => {
  */
 exports.endSession = async (req, res, next) => {
   try {
-    const session = await InterviewSession.findOne({ 
-      userId: req.user.userId, 
-      completed: false 
+    const session = await InterviewSession.findOne({
+      userId: req.user.userId,
+      completed: false
     });
 
     if (!session) {
