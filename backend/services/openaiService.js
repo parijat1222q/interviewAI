@@ -47,7 +47,7 @@ Return ONLY a valid JSON object:
       messages: [{ role: "system", content: prompt }],
       temperature: 0.7,
       max_tokens: 400,
-      response_format: { type: "json_object" } // Forces JSON output
+      response_format: { type: "json_object" }
     });
 
     const result = JSON.parse(completion.choices[0].message.content);
@@ -61,6 +61,62 @@ Return ONLY a valid JSON object:
   } catch (error) {
     console.error('OpenAI Service Error:', error.message);
     throw new Error('Failed to generate interview question');
+  }
+};
+
+/**
+ * Evaluate a candidate's answer (NEW FUNCTION)
+ * @param {string} role - User's job role
+ * @param {string} question - The interview question asked
+ * @param {string} answer - The candidate's answer
+ * @returns {Promise<Object>} Evaluation object with scores
+ */
+exports.evaluateAnswer = async (role, question, answer) => {
+  try {
+    const prompt = `
+You are a senior technical interviewer evaluating a candidate's answer.
+
+Role: ${role}
+Question: "${question}"
+Candidate's Answer: "${answer}"
+
+Evaluate this answer on these dimensions:
+1. accuracy (0-10): Technical correctness and completeness
+2. clarity (0-10): Communication quality and structure
+3. missing_concepts: Specific topics/concepts that SHOULD have been mentioned but weren't (string array, max 5)
+4. sentiment (positive/neutral/negative): Tone and attitude
+5. confidence_score (0-10): Based on specificity, depth, and certainty
+
+Return ONLY a valid JSON object with exactly this structure:
+{
+  "accuracy": 8,
+  "clarity": 7,
+  "missing_concepts": ["cache invalidation", "database indexing"],
+  "sentiment": "neutral",
+  "confidence_score": 6
+}
+    `.trim();
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: prompt }],
+      temperature: 0.3,
+      max_tokens: 250,
+      response_format: { type: "json_object" }
+    });
+
+    const result = JSON.parse(completion.choices[0].message.content);
+    
+    // Validate numeric ranges
+    if (result.accuracy < 0 || result.accuracy > 10) result.accuracy = 5;
+    if (result.clarity < 0 || result.clarity > 10) result.clarity = 5;
+    if (result.confidence_score < 0 || result.confidence_score > 10) result.confidence_score = 5;
+    if (!Array.isArray(result.missing_concepts)) result.missing_concepts = [];
+    
+    return result;
+  } catch (error) {
+    console.error('Answer Evaluation Error:', error.message);
+    throw new Error('Failed to evaluate answer');
   }
 };
 

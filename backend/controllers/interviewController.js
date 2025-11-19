@@ -1,5 +1,5 @@
 const InterviewSession = require('../models/InterviewSession');
-const { generateInterviewRound } = require('../services/openaiService');
+const { generateInterviewRound, evaluateAnswer } = require('../services/openaiService');
 
 /**
  * Start or continue interview session
@@ -26,20 +26,19 @@ exports.getQuestion = async (req, res, next) => {
       });
     }
 
-    // If previous answer exists, save it to session
+    // If previous answer exists, evaluate and save it
     if (previousAnswer && session.currentQuestion) {
-      // Get evaluation from the AI response that was already generated
-      // For now, we'll update this in the next call
+      const evaluation = await evaluateAnswer(userRole, session.currentQuestion, previousAnswer);
       session.questions.push({
         question: session.currentQuestion,
         answer: previousAnswer,
+        evaluation: evaluation,
         answeredAt: new Date()
       });
     }
 
     // Generate next question with AI
-    const lastAnswer = previousAnswer || null;
-    const aiResult = await generateInterviewRound(userRole, lastAnswer);
+    const aiResult = await generateInterviewRound(userRole, previousAnswer || null);
 
     // Update session with new question
     session.currentQuestion = aiResult.question;
@@ -47,7 +46,7 @@ exports.getQuestion = async (req, res, next) => {
 
     res.json({
       question: aiResult.question,
-      evaluation: aiResult.evaluation // For immediate feedback
+      evaluation: aiResult.evaluation // For immediate feedback on first question
     });
   } catch (error) {
     next(error);
@@ -77,23 +76,25 @@ exports.submitAnswer = async (req, res, next) => {
       return res.status(400).json({ error: 'No active interview session' });
     }
 
-    // Generate evaluation for this answer
-    const aiResult = await generateInterviewRound(session.role, answer);
+    // Evaluate the answer
+    const evaluation = await evaluateAnswer(session.role, session.currentQuestion, answer);
 
     // Save completed question with evaluation
     session.questions.push({
       question: session.currentQuestion,
       answer: answer,
-      evaluation: aiResult.evaluation,
+      evaluation: evaluation,
       answeredAt: new Date()
     });
 
-    session.currentQuestion = aiResult.question;
+    // Generate next question
+    const nextQuestionResult = await generateInterviewRound(session.role, answer);
+    session.currentQuestion = nextQuestionResult.question;
     await session.save();
 
     res.json({
-      feedback: aiResult.evaluation,
-      nextQuestion: aiResult.question
+      feedback: evaluation,
+      nextQuestion: nextQuestionResult.question
     });
   } catch (error) {
     next(error);
