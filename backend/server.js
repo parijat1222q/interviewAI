@@ -29,9 +29,10 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:5173', // Vite dev server
-    'http://localhost:3000',  // CRA default
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:4000',
+    'http://localhost:5000'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -56,8 +57,8 @@ app.use('/api/voice', voiceRoutes); // Voice API routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   });
