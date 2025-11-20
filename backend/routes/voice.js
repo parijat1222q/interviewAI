@@ -4,11 +4,21 @@ const VoiceService = require('../services/voiceService');
 const { transcribeAudio } = require('../services/voiceService');
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 
 // Configure multer for audio uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+// Configure rate limiter for expensive transcription endpoint
+const transcribeLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 6, // limit to 6 transcriptions per minute per IP/user
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many transcription requests, please try again later.' }
 });
 
 /**
@@ -40,7 +50,7 @@ router.post('/start', auth, (req, res) => {
  * Transcribe audio to text
  * POST /api/voice/transcribe
  */
-router.post('/transcribe', auth, upload.single('audio'), async (req, res) => {
+router.post('/transcribe', auth, transcribeLimiter, upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
