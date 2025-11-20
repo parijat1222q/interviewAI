@@ -13,6 +13,9 @@ export const useVoiceInterview = () => {
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const wsRef = useRef(null);
+  const pcRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   /**
    * Start recording audio from microphone
@@ -177,6 +180,122 @@ export const useVoiceInterview = () => {
   }, [getWebSocketToken]);
 
   /**
+   * Start WebRTC call: create PeerConnection, send join, create offer when server responds
+   * @param {string} sessionId
+   * @returns {Object} { ws, pc, stop }
+   */
+  const startWebRTC = useCallback(async (sessionId) => {
+    try {
+      const token = await getWebSocketToken();
+      if (!token) throw new Error('No WS token');
+
+      const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:5000'}/voice-signal?token=${token}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      // Create RTCPeerConnection
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+      pcRef.current = pc;
+
+      // Play remote audio
+      const remoteAudio = document.createElement('audio');
+      remoteAudio.autoplay = true;
+      remoteAudioRef.current = remoteAudio;
+
+      pc.ontrack = (event) => {
+        // event.streams[0] should contain remote audio
+        if (remoteAudio.srcObject !== event.streams[0]) {
+          remoteAudio.srcObject = event.streams[0];
+        }
+      };
+
+      pc.onicecandidate = (ev) => {
+        if (ev.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'candidate',
+            sessionId,
+            candidate: ev.candidate
+          }));
+        }
+      };
+
+      // Open WS and perform signaling
+      ws.onopen = async () => {
+        console.log('WebSocket open, sending join');
+        ws.send(JSON.stringify({ type: 'join', sessionId }));
+
+        // Get local audio and add tracks to PC
+        try {
+          const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        } catch (err) {
+          console.error('Failed to get local audio for WebRTC', err);
+        }
+      };
+
+      ws.onmessage = async (msgEvent) => {
+        try {
+          const msg = JSON.parse(msgEvent.data);
+          if (msg.type === 'joined') {
+            // Create offer after server acknowledges join
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(JSON.stringify({
+              type: 'offer',
+              sessionId,
+              sdp: offer
+            }));
+          } else if (msg.type === 'answer' && msg.sdp) {
+            await pc.setRemoteDescription(msg.sdp);
+          } else if (msg.type === 'candidate' && msg.candidate) {
+            try {
+              await pc.addIceCandidate(msg.candidate);
+            } catch (e) {
+              console.warn('Failed to add remote ICE candidate', e);
+            }
+          }
+        } catch (err) {
+          console.error('WS message handling error', err);
+        }
+      };
+
+      ws.onerror = (e) => {
+        console.error('WebSocket error', e);
+      };
+
+      ws.onclose = () => {
+        console.log('Signaling websocket closed');
+      };
+
+      const stop = () => {
+        try {
+          if (pcRef.current) {
+            pcRef.current.getSenders().forEach(s => s.track?.stop());
+            pcRef.current.close();
+          }
+          if (wsRef.current) wsRef.current.close();
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.pause();
+            remoteAudioRef.current.srcObject = null;
+          }
+          pcRef.current = null;
+          wsRef.current = null;
+        } catch (e) {
+          console.warn('Error stopping WebRTC', e);
+        }
+      };
+
+      return { ws, pc, stop };
+    } catch (err) {
+      setError('Failed to start WebRTC: ' + err.message);
+      console.error(err);
+      return null;
+    }
+  }, [getWebSocketToken]);
+
+  /**
    * Reset voice state
    */
   const resetVoice = useCallback(() => {
@@ -187,6 +306,15 @@ export const useVoiceInterview = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
       mediaRecorderRef.current = null;
+    }
+    // stop any ongoing WebRTC session
+    if (pcRef.current || wsRef.current) {
+      try {
+        pcRef.current?.close();
+        wsRef.current?.close();
+      } catch (e) {}
+      pcRef.current = null;
+      wsRef.current = null;
     }
   }, []);
 
@@ -201,6 +329,11 @@ export const useVoiceInterview = () => {
     transcribeAudio,
     connectWebSocket,
     getWebSocketToken,
+    startWebRTC,
+    stopWebRTC: () => {
+      try { pcRef.current?.close(); wsRef.current?.close(); } catch(e) {}
+      pcRef.current = null; wsRef.current = null;
+    },
     resetVoice
   };
 };
