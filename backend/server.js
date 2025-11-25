@@ -13,11 +13,15 @@ const validateEnv = require('./config/env.config');
 const authRoutes = require('./routes/auth');
 const interviewRoutes = require('./routes/interview');
 const resumeRoutes = require('./routes/resume');
-const voiceRoutes = require('./routes/voice'); // Voice routes
+const voiceRoutes = require('./routes/voice');
+const leaderboardRoutes = require('./routes/leaderboard');
+const learningHubRoutes = require('./routes/learningHub');
+const jobTrackerRoutes = require('./routes/jobTracker');
+const sentimentRoutes = require('./routes/sentiment');
 const errorHandler = require('./middleware/errorHandler');
 
 // Import Voice Service
-const VoiceService = require('./services/voiceService'); // Voice service
+const VoiceService = require('./services/voiceService');
 
 // Validate environment
 validateEnv();
@@ -35,7 +39,7 @@ app.use(cors({
     'http://localhost:5000'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -53,7 +57,11 @@ connectDB();
 app.use('/api/auth', authRoutes);
 app.use('/api/interview', interviewRoutes);
 app.use('/api/resume', resumeRoutes);
-app.use('/api/voice', voiceRoutes); // Voice API routes
+app.use('/api/voice', voiceRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/learning-hub', learningHubRoutes);
+app.use('/api/job-tracker', jobTrackerRoutes);
+app.use('/api/sentiment', sentimentRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
