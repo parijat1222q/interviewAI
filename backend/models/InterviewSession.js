@@ -5,11 +5,17 @@ const interviewSessionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     required: true,
-    index: true // For fast queries by user
+    index: true
   },
   role: { 
     type: String, 
     required: true 
+  },
+  mode: {
+    type: String,
+    enum: ['technical', 'hr', 'behavioral'],
+    default: 'technical',
+    index: true
   },
   questions: [{
     question: { type: String, required: true },
@@ -21,19 +27,28 @@ const interviewSessionSchema = new mongoose.Schema({
       sentiment: { type: String, enum: ['positive', 'neutral', 'negative'] },
       confidence_score: { type: Number, min: 0, max: 10 }
     },
+    sentimentAnalysis: {
+      sentiment: String,
+      professionalism: Number,
+      confidence: Number,
+      technicalTerms: [String]
+    },
     answeredAt: Date
   }],
   currentQuestion: String,
   completed: { 
     type: Boolean, 
-    default: false 
+    default: false,
+    index: true
   },
   completedAt: Date
 }, { 
-  timestamps: true // Adds createdAt, updatedAt
+  timestamps: true
 });
 
-// Index for performance
+// Compound indexes for performance
 interviewSessionSchema.index({ userId: 1, createdAt: -1 });
+interviewSessionSchema.index({ userId: 1, completed: 1 });
+interviewSessionSchema.index({ userId: 1, mode: 1 });
 
 module.exports = mongoose.model('InterviewSession', interviewSessionSchema);
