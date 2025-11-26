@@ -1,14 +1,18 @@
 const InterviewSession = require('../models/InterviewSession');
 const { generateInterviewRound, evaluateAnswer } = require('../services/openaiService');
+const sentimentService = require('../services/sentimentService');
+const leaderboardService = require('../services/leaderboardService');
 
 /**
  * Start or continue interview session
  * POST /api/interview/question
+ * Body: { mode: 'technical' | 'hr' | 'behavioral' (optional, defaults to 'technical') }
  */
 exports.getQuestion = async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const userRole = req.user.role;
+    const mode = req.body.mode || 'technical'; // Add mode selection
 
     // Find or create active session
     let session = await InterviewSession.findOne({
@@ -20,20 +24,28 @@ exports.getQuestion = async (req, res, next) => {
       session = await InterviewSession.create({
         userId,
         role: userRole,
+        mode: mode, // Store mode in session
         questions: [],
         currentQuestion: null
       });
     }
 
+    // Update mode if provided
+    if (req.body.mode) {
+      session.mode = req.body.mode;
+    }
+
     // If no current question, generate one
     if (!session.currentQuestion) {
-      const aiResult = await generateInterviewRound(userRole, null);
+      const aiResult = await generateInterviewRound(userRole, session.mode, null);
       session.currentQuestion = aiResult.question;
       await session.save();
     }
 
     res.json({
-      question: session.currentQuestion
+      question: session.currentQuestion,
+      mode: session.mode,
+      sessionId: session._id
     });
   } catch (error) {
     next(error);
@@ -41,8 +53,9 @@ exports.getQuestion = async (req, res, next) => {
 };
 
 /**
- * Submit answer and get evaluation
+ * Submit answer and get evaluation + sentiment analysis
  * POST /api/interview/answer
+ * Body: { answer: string }
  */
 exports.submitAnswer = async (req, res, next) => {
   try {
@@ -63,25 +76,63 @@ exports.submitAnswer = async (req, res, next) => {
       return res.status(400).json({ error: 'No active interview session' });
     }
 
-    // Evaluate the answer
-    const evaluation = await evaluateAnswer(session.role, session.currentQuestion, answer);
+    // Evaluate the answer with mode context
+    const evaluation = await evaluateAnswer(
+      session.role,
+      session.currentQuestion,
+      answer,
+      session.mode || 'technical'
+    );
+
+    // Perform sentiment analysis
+    let sentimentAnalysis = null;
+    try {
+      sentimentAnalysis = await sentimentService.analyzeAndSaveAnswer(
+        session._id,
+        userId,
+        session.questions.length,
+        answer
+      );
+    } catch (sentimentError) {
+      console.warn('Sentiment analysis failed, continuing without it:', sentimentError.message);
+    }
 
     // Save completed question with evaluation
     session.questions.push({
       question: session.currentQuestion,
       answer: answer,
       evaluation: evaluation,
+      sentimentAnalysis: sentimentAnalysis ? {
+        sentiment: sentimentAnalysis.sentimentScore.label,
+        professionalism: sentimentAnalysis.tonalAnalysis.professionalism,
+        confidence: sentimentAnalysis.tonalAnalysis.confidence,
+        technicalTerms: sentimentAnalysis.communicationMetrics.technicalTerms
+      } : null,
       answeredAt: new Date()
     });
 
     // Generate next question
-    const nextQuestionResult = await generateInterviewRound(session.role, answer);
+    const nextQuestionResult = await generateInterviewRound(
+      session.role,
+      session.mode || 'technical',
+      answer
+    );
     session.currentQuestion = nextQuestionResult.question;
     await session.save();
 
     res.json({
-      feedback: evaluation,
-      nextQuestion: nextQuestionResult.question
+      feedback: {
+        ...evaluation,
+        sentiment: evaluation.sentiment,
+        technicalTerms: sentimentAnalysis?.communicationMetrics?.technicalTerms || []
+      },
+      nextQuestion: nextQuestionResult.question,
+      questionNumber: session.questions.length,
+      sentimentData: sentimentAnalysis ? {
+        sentiment: sentimentAnalysis.sentimentScore.label,
+        professionalism: sentimentAnalysis.tonalAnalysis.professionalism,
+        clarity: sentimentAnalysis.tonalAnalysis.clarity
+      } : null
     });
   } catch (error) {
     next(error);
@@ -130,16 +181,25 @@ exports.endSession = async (req, res, next) => {
     // Calculate overall stats
     const scores = session.questions.map(q => q.evaluation);
     const avgScore = {
-      accuracy: scores.reduce((acc, q) => acc + q.accuracy, 0) / scores.length,
-      clarity: scores.reduce((acc, q) => acc + q.clarity, 0) / scores.length,
-      confidence: scores.reduce((acc, q) => acc + q.confidence_score, 0) / scores.length,
+      accuracy: scores.length > 0 ? scores.reduce((acc, q) => acc + q.accuracy, 0) / scores.length : 0,
+      clarity: scores.length > 0 ? scores.reduce((acc, q) => acc + q.clarity, 0) / scores.length : 0,
+      confidence: scores.length > 0 ? scores.reduce((acc, q) => acc + q.confidence_score, 0) / scores.length : 0,
     };
+
+    // Update leaderboard
+    try {
+      await leaderboardService.updateLeaderboard(req.user.userId);
+    } catch (leaderboardError) {
+      console.warn('Leaderboard update failed:', leaderboardError.message);
+    }
 
     res.json({
       message: 'Session ended',
       sessionId: session._id,
+      mode: session.mode,
       overallScore: avgScore,
-      totalQuestions: session.questions.length
+      totalQuestions: session.questions.length,
+      completedAt: session.completedAt
     });
   } catch (error) {
     next(error);
