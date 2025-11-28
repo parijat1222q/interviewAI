@@ -9,10 +9,10 @@ const openai = new OpenAI({
  * Generate interview question based on mode and role
  * @param {string} role - User's job role
  * @param {string} mode - Interview mode: 'technical', 'hr', 'behavioral'
- * @param {string|null} previousAnswer - Previous answer to tailor next question
+ * @param {Array} sessionHistory - Array of previous Q&A objects
  * @returns {Promise<Object>} { question, evaluation }
  */
-exports.generateInterviewRound = async (role, mode = 'technical', previousAnswer = null) => {
+exports.generateInterviewRound = async (role, mode = 'technical', sessionHistory = []) => {
   try {
     // Mode-specific prompts
     const modePrompts = {
@@ -27,23 +27,34 @@ exports.generateInterviewRound = async (role, mode = 'technical', previousAnswer
       behavioral: 'real-world experience and interpersonal skills'
     };
 
+    // Format history for context
+    const historyContext = sessionHistory.map((h, i) =>
+      `Q${i + 1}: ${h.question}\nA${i + 1}: ${h.answer}`
+    ).join('\n\n');
+
     const prompt = `
 You are a senior interviewer conducting a ${mode} interview.
 
 Role: ${role}
 Interview Mode: ${mode}
-${previousAnswer ? `Previous answer: "${previousAnswer}"` : 'This is the first question.'}
+
+Previous Conversation History:
+${historyContext || 'No previous questions yet.'}
 
 ${modePrompts[mode] || modePrompts.technical}
 
 Tasks:
-1. Ask ONE specific, challenging ${mode} question relevant to ${role} professionals
-2. Evaluate on 5 dimensions:
-   - accuracy (0-10): correctness and depth
-   - clarity (0-10): communication quality
-   - missing_concepts: array of specific topics not mentioned (max 5)
-   - sentiment: positive/neutral/negative tone
-   - confidence_score (0-10): based on specificity and conviction
+1. Analyze the candidate's previous answers (if any) to identify weak spots or interesting points to probe further.
+2. Ask ONE specific, challenging ${mode} question relevant to ${role} professionals.
+3. If the previous answer was vague, ask a follow-up to clarify.
+4. If the previous answer was good, move to a related advanced topic.
+
+Evaluate on 5 dimensions (for the *previous* answer if this is a follow-up, otherwise just provide nulls or placeholders as this function is mainly for generating the NEXT question, but we keep the structure for consistency):
+   - accuracy (0-10)
+   - clarity (0-10)
+   - missing_concepts
+   - sentiment
+   - confidence_score (0-10)
 
 Focus on assessing: ${modeDescription[mode]}
 
@@ -51,11 +62,11 @@ Example JSON structure:
 {
   "question": "Tell me about a time when...",
   "evaluation": {
-    "accuracy": 8,
-    "clarity": 7,
-    "missing_concepts": ["...", "..."],
-    "sentiment": "positive",
-    "confidence_score": 8
+    "accuracy": 0,
+    "clarity": 0,
+    "missing_concepts": [],
+    "sentiment": "neutral",
+    "confidence_score": 0
   }
 }
 
@@ -71,9 +82,9 @@ Return ONLY a valid JSON object.
     });
 
     const result = JSON.parse(completion.choices[0].message.content);
-    
+
     // Validate response structure
-    if (!result.question || !result.evaluation) {
+    if (!result.question) {
       throw new Error('Invalid AI response structure');
     }
 
@@ -136,7 +147,7 @@ Return ONLY a valid JSON object:
     });
 
     const result = JSON.parse(completion.choices[0].message.content);
-    
+
     // Validate numeric ranges
     if (result.accuracy < 0 || result.accuracy > 10) result.accuracy = 5;
     if (result.clarity < 0 || result.clarity > 10) result.clarity = 5;

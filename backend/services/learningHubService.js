@@ -60,12 +60,18 @@ const RESOURCE_LINKS = {
  * @param {string} role - User role
  * @returns {Promise<Object>} Learning hub entry
  */
+/**
+ * Get or create learning hub for user
+ * @param {string} userId - User ID
+ * @param {string} role - User role
+ * @returns {Promise<Object>} Learning hub entry
+ */
 exports.getOrCreateLearningHub = async (userId, role) => {
   try {
     let hub = await LearningHub.findOne({ userId });
 
     if (!hub) {
-      const topics = this.generateRecommendedTopics(role);
+      const topics = generateRecommendedTopics(role);
       hub = await LearningHub.create({
         userId,
         role,
@@ -89,7 +95,7 @@ exports.getOrCreateLearningHub = async (userId, role) => {
  * @param {string} role - User role
  * @returns {Array} Recommended topics
  */
-generateRecommendedTopics = (role) => {
+const generateRecommendedTopics = (role) => {
   const roleDifficulty = {
     frontend: ['beginner', 'intermediate', 'advanced'],
     backend: ['beginner', 'intermediate', 'advanced'],
@@ -180,6 +186,21 @@ exports.updateRecommendationsBasedOnSkillGaps = async (userId) => {
 };
 
 /**
+ * Random concept generator
+ */
+const getRandomConcept = (role) => {
+  const concepts = {
+    backend: ['database indexing', 'caching strategies', 'API design', 'microservices'],
+    frontend: ['React hooks', 'CSS Grid', 'event delegation', 'state management'],
+    data: ['feature engineering', 'model evaluation', 'cross-validation', 'regularization'],
+    devops: ['containerization', 'CI/CD pipelines', 'infrastructure as code', 'monitoring']
+  };
+
+  const roleConcepts = concepts[role] || concepts.backend;
+  return roleConcepts[Math.floor(Math.random() * roleConcepts.length)];
+};
+
+/**
  * Get daily challenge
  * @param {string} userId - User ID
  * @returns {Promise<Object>} Daily challenge
@@ -196,7 +217,7 @@ exports.getDailyChallenge = async (userId) => {
     if (challengeDate !== today) {
       const challenge = {
         date: new Date(),
-        question: 'Explain the concept of ' + this.getRandomConcept(hub.role),
+        question: 'Explain the concept of ' + getRandomConcept(hub.role),
         completed: false,
         score: null
       };
@@ -210,19 +231,4 @@ exports.getDailyChallenge = async (userId) => {
     console.error('Daily challenge error:', error.message);
     throw error;
   }
-};
-
-/**
- * Random concept generator
- */
-getRandomConcept = (role) => {
-  const concepts = {
-    backend: ['database indexing', 'caching strategies', 'API design', 'microservices'],
-    frontend: ['React hooks', 'CSS Grid', 'event delegation', 'state management'],
-    data: ['feature engineering', 'model evaluation', 'cross-validation', 'regularization'],
-    devops: ['containerization', 'CI/CD pipelines', 'infrastructure as code', 'monitoring']
-  };
-
-  const roleConcepts = concepts[role] || concepts.backend;
-  return roleConcepts[Math.floor(Math.random() * roleConcepts.length)];
 };

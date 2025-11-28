@@ -29,26 +29,36 @@ class ResumeService {
   async analyzeResumeATS(resumeText, jobDescription) {
     try {
       const prompt = `
-        Resume: ${resumeText}
-        Job Description: ${jobDescription}
+        You are an expert ATS (Applicant Tracking System) scanner and Resume Coach.
+
+        Resume Text:
+        "${resumeText}"
+
+        Job Description:
+        "${jobDescription}"
         
-        Analyze ATS compatibility:
-        1. Calculate match score 0-100 based on keyword overlap
-        2. Extract missing but critical keywords (max 10)
-        3. Provide 3-5 specific improvement suggestions
-        4. Identify strengths (3-5 key matches)
+        Analyze the resume against the job description with strict ATS criteria:
+        1. **Match Score (0-100)**: Calculate based on keyword overlap, experience relevance, and skills match. Be strict.
+        2. **Missing Keywords**: Identify critical hard skills, tools, and technologies present in the JD but missing from the resume.
+        3. **Formatting Issues**: Check for things that might confuse an ATS (though you are reading text, infer structure issues if possible, e.g., missing sections).
+        4. **Improvement Suggestions**: Provide 3-5 actionable, high-impact changes.
+        5. **Strengths**: What makes this candidate a good fit?
         
-        Return JSON:
+        Return ONLY a valid JSON object:
         {
           "score": 75,
-          "missingKeywords": ["React Hooks", "AWS", "CI/CD"],
-          "suggestions": ["Add AWS experience", "Mention CI/CD tools"],
-          "strengths": ["Strong React skills", "Backend experience"]
+          "missingKeywords": ["React Hooks", "AWS Lambda", "CI/CD"],
+          "suggestions": [
+            "Add a 'Technical Skills' section with the missing keywords.",
+            "Quantify your impact in the 'Experience' section (e.g., 'Improved performance by 20%').",
+            "Tailor your summary to mention specific experience with Node.js."
+          ],
+          "strengths": ["Strong React skills", "Relevant backend experience", "Clear education section"]
         }
       `.trim();
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4-turbo-preview",
+        model: "gpt-4o-mini",
         messages: [{ role: "system", content: prompt }],
         temperature: 0.3,
         max_tokens: 500,
@@ -56,7 +66,7 @@ class ResumeService {
       });
 
       const result = JSON.parse(completion.choices[0].message.content);
-      
+
       // Validate structure
       return {
         score: result.score || 0,

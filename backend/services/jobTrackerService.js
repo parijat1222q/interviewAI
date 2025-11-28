@@ -31,8 +31,7 @@ exports.getOrCreateJobTracker = async (userId) => {
  */
 exports.addJobApplication = async (userId, applicationData) => {
   try {
-    const tracker = await JobTracker.findOne({ userId });
-    if (!tracker) throw new Error('Job tracker not found');
+    const tracker = await this.getOrCreateJobTracker(userId);
 
     const newApplication = {
       applicationId: `app_${Date.now()}`,

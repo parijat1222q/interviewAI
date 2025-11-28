@@ -42,7 +42,7 @@ exports.updateLeaderboard = async (userId) => {
     const totalScore = Math.round((avgAccuracy + avgClarity + avgConfidence) / 3 * 100);
 
     // Check for badges
-    const badges = this.calculateBadges(sessions, avgAccuracy, avgClarity, avgConfidence);
+    const badges = calculateBadges(sessions, avgAccuracy, avgClarity, avgConfidence);
 
     // Update or create leaderboard entry
     let leaderboard = await Leaderboard.findOne({ userId });
@@ -85,7 +85,7 @@ exports.updateLeaderboard = async (userId) => {
  * Calculate earned badges
  * @returns {Array} Earned badge objects
  */
-calculateBadges = (sessions, avgAccuracy, avgClarity, avgConfidence) => {
+const calculateBadges = (sessions, avgAccuracy, avgClarity, avgConfidence) => {
   const badges = [];
 
   // Perfect Accuracy badge

@@ -37,7 +37,7 @@ exports.getQuestion = async (req, res, next) => {
 
     // If no current question, generate one
     if (!session.currentQuestion) {
-      const aiResult = await generateInterviewRound(userRole, session.mode, null);
+      const aiResult = await generateInterviewRound(userRole, session.mode, session.questions);
       session.currentQuestion = aiResult.question;
       await session.save();
     }
@@ -115,7 +115,7 @@ exports.submitAnswer = async (req, res, next) => {
     const nextQuestionResult = await generateInterviewRound(
       session.role,
       session.mode || 'technical',
-      answer
+      session.questions // Pass full history including the latest answer
     );
     session.currentQuestion = nextQuestionResult.question;
     await session.save();
